@@ -1,13 +1,12 @@
 {
   "name": "semaphore",
   "displayName": "Claude Semaphore",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "System tray / menu bar traffic light for Claude Code: red = Claude needs your input, orange = working, green = task finished. Visible from any window on macOS, Windows, and Linux.",
   "author": {
     "name": "Taulant Sela"
   },
   "repository": "https://github.com/TaulantSela/claude-code-semaphore",
   "license": "MIT",
-  "hooks": "./hooks/hooks.json",
   "keywords": ["tray", "menubar", "status", "traffic-light", "productivity"]
 }

@@ -9,7 +9,7 @@
       "name": "semaphore",
       "source": "./plugin",
       "description": "System tray / menu bar traffic light for Claude Code: red = Claude needs your input, orange = working, green = task finished.",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ]
 }
