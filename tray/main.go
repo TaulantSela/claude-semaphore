@@ -64,6 +64,13 @@ var labels = map[string]string{
 	"idle":   "No active Claude sessions",
 }
 
+var emojis = map[string]string{
+	"red":    "🔴",
+	"orange": "🟠",
+	"green":  "🟢",
+	"idle":   "⚪️",
+}
+
 func main() {
 	lock, err := net.Listen("tcp", singleInstanceAddr)
 	if err != nil {
@@ -83,7 +90,13 @@ func onReady() {
 	quitItem := systray.AddMenuItem("Quit", "")
 
 	apply := func(st status) {
-		systray.SetIcon(iconFor(st.state))
+		// On macOS an emoji title renders reliably in the menu bar, while
+		// icon-only status items have been observed to stay invisible.
+		if runtime.GOOS == "darwin" {
+			systray.SetTitle(emojis[st.state])
+		} else {
+			systray.SetIcon(iconFor(st.state))
+		}
 		label := labels[st.state]
 		if st.sessions > 1 {
 			label = fmt.Sprintf("%s  (%d sessions)", label, st.sessions)
