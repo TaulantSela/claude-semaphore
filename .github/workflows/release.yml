@@ -10,6 +10,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-14
@@ -63,7 +64,22 @@ jobs:
           go build -trimpath -ldflags="$LDFLAGS" \
             -o "../dist/claude-semaphore-$GOOS-$GOARCH$EXT" .
 
-      - name: Upload release assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-semaphore-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
