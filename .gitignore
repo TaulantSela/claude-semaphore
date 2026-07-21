@@ -3,3 +3,4 @@ tray/claude-semaphore
 tray/claude-semaphore.exe
 *.tmp
 .DS_Store
+.vercel
