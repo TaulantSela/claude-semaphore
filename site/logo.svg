@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Claude Code Semaphore">
+  <rect width="512" height="512" rx="112" fill="#0a0a0c"/>
+  <rect x="160" y="68" width="192" height="376" rx="80" fill="#15151c" stroke="#26262f" stroke-width="8"/>
+  <circle cx="256" cy="156" r="62" fill="#ef4444" opacity=".18"/>
+  <circle cx="256" cy="156" r="44" fill="#ef4444"/>
+  <circle cx="256" cy="256" r="62" fill="#f59e0b" opacity=".18"/>
+  <circle cx="256" cy="256" r="44" fill="#f59e0b"/>
+  <circle cx="256" cy="356" r="62" fill="#22c55e" opacity=".18"/>
+  <circle cx="256" cy="356" r="44" fill="#22c55e"/>
+</svg>
