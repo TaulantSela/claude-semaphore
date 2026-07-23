@@ -29,6 +29,25 @@ FILE="$STATE_DIR/$SESSION"
 
 set_state() { printf '%s\n' "$1" > "$FILE"; }
 
+# Ledger of permission dialogs that are currently open, one tool name per
+# line. Claude Code fires no "permission granted" event, so an approved
+# dialog is only observable as the PostToolUse of the tool it was gating.
+# PermissionRequest carries no tool_use_id, so the tool name is the only
+# correlation key available.
+PEND="$FILE.pending"
+pend_add()   { printf '%s\n' "$1" >> "$PEND"; }
+pend_clear() { rm -f "$PEND"; }
+# Drop the FIRST line matching $1; succeed only if one was actually dropped,
+# so two parallel dialogs for the same tool must each be answered.
+pend_take() {
+  [ -s "$PEND" ] || return 1
+  grep -qxF "$1" "$PEND" 2>/dev/null || return 1
+  awk -v t="$1" 'hit==0 && $0==t { hit=1; next } { print }' "$PEND" > "$PEND.tmp" &&
+    mv "$PEND.tmp" "$PEND"
+  return 0
+}
+pend_empty() { [ ! -s "$PEND" ]; }
+
 EVENT=$(json_field hook_event_name)
 TOOL=$(json_field tool_name)
 
@@ -46,6 +65,7 @@ esac
 
 case "$ACTION" in
   working)
+    pend_clear
     set_state orange
     ;;
   pre)
@@ -55,17 +75,28 @@ case "$ACTION" in
     if [ "$TOOL" = "AskUserQuestion" ]; then
       set_state red
     else
+      # PreToolUse always precedes its own call's PermissionRequest, so
+      # wiping the ledger here cannot lose a dialog that is about to open —
+      # it only drops entries orphaned by an interrupt or a blocking hook.
+      pend_clear
       set_state orange
     fi
     ;;
   post)
     # While a permission dialog is pending the turn cannot START new tools,
     # but tools launched earlier in parallel can still FINISH. Their
-    # completion must not downgrade red — except AskUserQuestion completing,
-    # which means the user just answered.
-    if [ "$(cat "$FILE" 2>/dev/null)" = "red" ] && [ "$TOOL" != "AskUserQuestion" ]; then
-      :
-    else
+    # completion must not downgrade red.
+    #
+    # An APPROVED dialog is otherwise invisible — there is no
+    # permission-granted event — so the gated tool's PostToolUse is the only
+    # proof the user answered. Clear red when this tool closes the last open
+    # dialog; without that the light stays red for the rest of the turn and
+    # only flips on Stop, which reads as "the tray froze after I clicked
+    # Allow". AskUserQuestion completing likewise means the user answered.
+    if [ "$(cat "$FILE" 2>/dev/null)" != "red" ] || [ "$TOOL" = "AskUserQuestion" ]; then
+      pend_clear
+      set_state orange
+    elif pend_take "$TOOL" && pend_empty; then
       set_state orange
     fi
     ;;
@@ -80,7 +111,7 @@ case "$ACTION" in
     # fire this without a dialog (github.com/anthropics/claude-code/29212).
     case "$(json_field permission_mode)" in
       auto|bypassPermissions|dontAsk) : ;;
-      *) set_state red ;;
+      *) pend_add "$TOOL"; set_state red ;;
     esac
     ;;
   attention)
@@ -107,9 +138,11 @@ case "$ACTION" in
     esac
     ;;
   done)
+    pend_clear
     set_state green
     ;;
   end)
+    pend_clear
     rm -f "$FILE"
     ;;
 esac
