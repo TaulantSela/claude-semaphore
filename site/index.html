@@ -222,11 +222,11 @@
   <div class="wrap">
     <div class="states">
       <div class="state red"><div class="bulb"></div><h3>Red</h3><p>Claude is waiting for your input — a permission prompt or question is open.</p></div>
-      <div class="state orange"><div class="bulb"></div><h3>Orange</h3><p>Claude is working, or a session is sitting idle.</p></div>
-      <div class="state green"><div class="bulb"></div><h3>Green</h3><p>Task finished — come back and collect your work.</p></div>
-      <div class="state white"><div class="bulb"></div><h3>White</h3><p>No active Claude sessions right now.</p></div>
+      <div class="state orange"><div class="bulb"></div><h3>Orange</h3><p>Claude is working on your task.</p></div>
+      <div class="state green"><div class="bulb"></div><h3>Green</h3><p>Task finished — come back and collect your work. Stays green for 10 minutes.</p></div>
+      <div class="state white"><div class="bulb"></div><h3>White</h3><p>Nothing running, or no Claude sessions open.</p></div>
     </div>
-    <p class="note">Running several sessions? Any session that needs you wins the light. Otherwise the most recently active one decides — so a stale window can't hide your fresh green.</p>
+    <p class="note">Running several sessions? The most urgent one wins: a session that needs you, then one that just finished, then one that's working — so a busy tab can't hide a tab that's done. A count beside the dot says how many, and the menu lists every session.</p>
   </div>
 </section>
 
@@ -262,7 +262,7 @@
         <div class="leg"><span class="sem-dot red"></span><div><b>Red</b><small>needs you · heartbeat</small></div></div>
         <div class="leg"><span class="sem-dot orange"></span><div><b>Orange</b><small>working · breathes</small></div></div>
         <div class="leg"><span class="sem-dot green"></span><div><b>Green</b><small>done · steady</small></div></div>
-        <div class="leg"><span class="sem-dot idle"></span><div><b>Idle</b><small>no sessions</small></div></div>
+        <div class="leg"><span class="sem-dot idle"></span><div><b>Idle</b><small>nothing running</small></div></div>
       </div>
     </div>
   </div>
@@ -279,12 +279,12 @@
       <div class="step">
         <div class="n">01 — Hooks</div>
         <h3>Lifecycle events, captured</h3>
-        <p>The plugin's hooks fire on Claude Code events — prompt submitted, tool running, permission needed, response finished — and write one tiny state file per session to <code>~/.claude/semaphore/</code>.</p>
+        <p>The plugin's hooks fire on Claude Code events — prompt submitted, tool running, permission needed, response finished — and write one tiny state file per session to <code>~/.claude/semaphore/</code>. Where Claude Code keeps its own session registry (the VS Code extension does), the light also flips the moment a dialog opens or you answer it.</p>
       </div>
       <div class="step">
         <div class="n">02 — Tray app</div>
         <h3>A single Go binary</h3>
-        <p>A static ~5&nbsp;MB binary polls that directory once a second and shows the aggregate light. Menu offers <b>Reset to idle</b> and <b>Quit</b>. Sessions untouched for 12&nbsp;hours are ignored, so a crash can't wedge the light.</p>
+        <p>A static ~5&nbsp;MB binary watches those files and updates the light within milliseconds. The menu lists every session with its state. Sessions whose process has exited are dropped, so a closed tab or a crash can't wedge the light.</p>
       </div>
     </div>
     <p class="privacy"><b>No telemetry, no network.</b> It reads local files, and nothing else.</p>

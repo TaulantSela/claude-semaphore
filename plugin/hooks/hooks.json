@@ -50,6 +50,17 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/state.sh post",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PermissionRequest": [
       {
         "hooks": [
@@ -106,6 +117,17 @@
       }
     ],
     "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/state.sh done",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
       {
         "hooks": [
           {
