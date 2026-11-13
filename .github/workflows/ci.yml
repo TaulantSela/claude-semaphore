@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tray:
+    name: tray (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each OS compiles its own systray backend and pid check
+        # (alive_unix.go / alive_windows.go), so test on all three.
+        os: [ubuntu-latest, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: tray
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tray/go.mod
+          cache-dependency-path: tray/go.sum
+
+      - name: gofmt
+        # Windows checkouts get CRLF line endings, which gofmt would flag.
+        if: runner.os == 'Linux'
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt -w on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -count=1 ./...
+
+  hooks:
+    name: hooks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS runs the script under the system bash 3.2, as users' Macs do.
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: hooks.json is valid JSON
+        run: python3 -m json.tool plugin/hooks/hooks.json > /dev/null
+
+      - name: state.sh parses
+        run: bash -n plugin/scripts/state.sh
+
+      - name: Hook scenarios
+        run: tests/state_test.sh
