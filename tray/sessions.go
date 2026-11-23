@@ -68,6 +68,7 @@ type regEntry struct {
 	WaitingFor      string `json:"waitingFor"`
 	StatusUpdatedAt int64  `json:"statusUpdatedAt"` // unix ms
 	Spare           bool   `json:"spare"`           // pre-warmed, not a real tab yet
+	Entrypoint      string `json:"entrypoint"`      // host, e.g. "claude-vscode"
 }
 
 type session struct {
@@ -78,6 +79,8 @@ type session struct {
 	since    time.Time // when the session entered its state (best effort)
 	finished bool      // the last turn ended normally (green, or green gone stale)
 	breathe  bool      // orange that is actually doing something
+	pid      int       // the Claude Code process, when known
+	host     string    // registry entrypoint; "" for hook-only sessions
 }
 
 // readHooks loads the plugin's per-session hook files.
@@ -188,7 +191,7 @@ func buildSessions(hooks map[string]hookFile, live map[string]regEntry, regDead 
 
 	for id, r := range live {
 		h, hasHook := hooks[id]
-		s := session{id: id, name: displayName(r.Name, r.Cwd, h.cwd, id)}
+		s := session{id: id, name: displayName(r.Name, r.Cwd, h.cwd, id), pid: r.PID, host: r.Entrypoint}
 		updated := time.UnixMilli(r.StatusUpdatedAt)
 		switch r.Status {
 		case "waiting":
@@ -218,7 +221,7 @@ func buildSessions(hooks map[string]hookFile, live map[string]regEntry, regDead 
 		if h.pid <= 0 && now.Sub(h.mtime) > staleAfter {
 			continue
 		}
-		s := session{id: id, name: displayName("", h.cwd, "", id), state: h.state, since: h.mtime}
+		s := session{id: id, name: displayName("", h.cwd, "", id), state: h.state, since: h.mtime, pid: h.pid}
 		switch h.state {
 		case stOrange:
 			s.breathe = now.Sub(h.mtime) < activeWindow
