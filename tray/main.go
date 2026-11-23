@@ -8,15 +8,18 @@
 //	grey   — nothing running, or no sessions at all
 //
 // Priority is red > green > orange > grey, so a tab that finished is not
-// hidden by another tab that is still busy. The menu lists every session.
+// hidden by another tab that is still busy. The menu lists every session;
+// clicking one brings its tab forward (jump.go) and marks it seen.
 //
 // State comes from Claude Code's session registry where the host writes one
 // (the VS Code extension does), falling back to the plugin's hook files; see
 // sessions.go. Both directories are watched, so the light follows an event
 // within milliseconds; a slow poll backs that up and ages the green state.
 //
-// `claude-semaphore --status` prints the sessions and the aggregate instead of
-// starting the tray, which helps when the light looks wrong.
+// `claude-semaphore --status` prints the sessions, the aggregate and where a
+// click on each session goes, instead of starting the tray, which helps when
+// the light looks wrong. `claude-semaphore --open <session id>` does what a
+// click does.
 package main
 
 import (
@@ -25,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"fyne.io/systray"
@@ -60,6 +64,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--status" {
 		printStatus()
 		return
+	}
+	if len(os.Args) > 2 && os.Args[1] == "--open" {
+		os.Exit(openSession(os.Args[2]))
 	}
 	lock, err := net.Listen("tcp", singleInstanceAddr)
 	if err != nil {
@@ -103,14 +110,49 @@ func (t *tracker) markSeen(now time.Time, only string) {
 	}
 }
 
+func (t *tracker) byID(id string) (session, bool) {
+	for _, s := range t.sessions {
+		if s.id == id {
+			return s, true
+		}
+	}
+	return session{}, false
+}
+
 func printStatus() {
 	t := &tracker{acked: map[string]time.Time{}}
 	now := time.Now()
 	t.refresh(now)
+	cfg, _ := os.UserConfigDir()
 	fmt.Printf("%s — %s\n", t.state, headline(t.state, t.count, len(t.sessions)))
 	for _, s := range t.sessions {
-		fmt.Printf("  %s   [%s]\n", sessionLine(s, now), s.id)
+		fmt.Printf("  %s   [%s]\n      click → %s\n", sessionLine(s, now), s.id, resolve(s, system, cfg))
 	}
+}
+
+// openSession does what clicking the session in the menu does; prefix is
+// the start of its id. It returns the process exit code.
+func openSession(prefix string) int {
+	t := &tracker{acked: map[string]time.Time{}}
+	t.refresh(time.Now())
+	var match []session
+	for _, s := range t.sessions {
+		if strings.HasPrefix(s.id, prefix) {
+			match = append(match, s)
+		}
+	}
+	if len(match) != 1 {
+		fmt.Fprintf(os.Stderr, "%d sessions match %q; see --status\n", len(match), prefix)
+		return 1
+	}
+	cfg, _ := os.UserConfigDir()
+	tg := resolve(match[0], system, cfg)
+	fmt.Printf("%s → %s\n", match[0].name, tg)
+	if err := jump(tg); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }
 
 func onReady() {
@@ -130,7 +172,7 @@ func onReady() {
 	header.Disable()
 	slots := make([]*systray.MenuItem, maxSlots)
 	for i := range slots {
-		slots[i] = systray.AddMenuItem("", "Click a finished session to mark it seen")
+		slots[i] = systray.AddMenuItem("", "Go to this session")
 		slots[i].Hide()
 	}
 	systray.AddSeparator()
@@ -323,7 +365,10 @@ func onReady() {
 				draw()
 			case i := <-clicks:
 				if id := slotIDs[i]; id != "" {
-					t.markSeen(time.Now(), id)
+					if s, ok := t.byID(id); ok {
+						go goTo(s) // shells out; keep the loop free
+					}
+					t.markSeen(time.Now(), id) // you are going to look at it
 					update()
 				}
 			case <-seenItem.ClickedCh:
