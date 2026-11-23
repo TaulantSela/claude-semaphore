@@ -35,8 +35,9 @@ sessions share that state, and the menu lists every session:
 🟠  portfolio-e7 — working
 ```
 
-Green lasts 10 minutes after a turn ends. Click a finished session (or
-**Mark finished as seen**) once you have looked at it.
+Click a session to jump to its tab ([below](#jumping-to-a-session)); that
+also marks a finished session as seen. Green lasts 10 minutes after a turn
+ends, and **Mark finished as seen** clears it for every session at once.
 
 ## Install
 
@@ -78,6 +79,28 @@ Sessions whose process has exited are dropped, so a closed tab or a crash
 can't wedge the light; files without a process id (from older plugin
 versions) are ignored after 12 hours. No network, no telemetry — the tray
 reads local files, nothing else.
+
+## Jumping to a session
+
+Click a session in the menu to bring it to the front:
+
+- **VS Code** (also Insiders, Cursor, VSCodium): the session's Claude Code
+  tab, in the window that hosts it, whether or not that tab is already
+  open. The first time, VS Code asks *Allow 'Claude Code' extension to open
+  this URI?*; tick **Do not ask me again for this extension**.
+- **Terminal and iTerm2** on macOS: the tab running the session. macOS asks
+  once whether Claude Semaphore may control the terminal.
+- **Any other app** on macOS: the app running the session.
+
+For VS Code, the tray sends the extension's own link,
+`vscode://anthropic.claude-code/open?session=<id>`, addressed to the window
+that hosts the session. It finds that window through the session's extension
+host, which keeps its window's log folder open (on Windows, through VS Code's
+logs instead). If it cannot tell the window, it only brings VS Code forward:
+any other window would open the session a second time.
+
+`claude-semaphore --status` shows where a click on each session goes, and
+`claude-semaphore --open <session id>` does what the click does.
 
 ## Uninstall
 
@@ -151,7 +174,7 @@ go build -o claude-semaphore .   # needs Go 1.22+; macOS build needs Xcode CLT
 Tests:
 
 ```bash
-(cd tray && go test ./...)   # session merging and priority
+(cd tray && go test ./...)   # session merging, priority, click targets
 tests/state_test.sh          # hook script scenarios
 ```
 
