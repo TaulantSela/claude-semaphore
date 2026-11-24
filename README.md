@@ -53,6 +53,18 @@ within a few seconds. On first run the plugin downloads the tray app for your
 platform (~5 MB) from this repo's GitHub Releases and registers it to start
 at login.
 
+**Updates:** Claude Code does not update plugins from third-party
+marketplaces unless you ask it to. To get new versions automatically, run
+`/plugin`, open **Marketplaces**, select `claude-semaphore` and turn on
+auto-update. To update by hand instead:
+
+```bash
+claude plugin marketplace update claude-semaphore
+claude plugin update semaphore@claude-semaphore
+```
+
+The tray app updates itself to match at the next session start.
+
 **Requirements:** `curl` (preinstalled on macOS/Linux; ships with Git Bash on
 Windows, which Claude Code already requires there).
 
@@ -198,11 +210,14 @@ claude --plugin-dir ./plugin
 version knows: a build that meets an unknown event (for example
 `PostToolBatch` on 2.1.97) silently skips **all** of the plugin's hooks.
 
-Releases are built by GitHub Actions for darwin/linux/windows × amd64/arm64
-when a `v*` tag is pushed:
+To release, bump `version` in `plugin/.claude-plugin/plugin.json` (the only
+place it is set; users receive nothing until it changes), merge, then push a
+tag for it. GitHub Actions builds the tray for darwin/linux/windows ×
+amd64/arm64, and `bootstrap.sh` downloads the build tagged with the plugin's
+version:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag -s v0.3.1 -m v0.3.1 && git push origin v0.3.1
 ```
 
 ## License
