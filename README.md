@@ -163,6 +163,15 @@ SEMAPHORE_LOG=/tmp/semaphore.log claude
 
 Each line shows the event, the agent, the tool and the state it produced.
 
+If the tray acts like an older version after an update (before 0.3.1,
+sessions starting together could leave the old tray running, so clicking a
+session did nothing), restart it:
+
+```bash
+pkill -f "^$HOME/.claude/semaphore-tray/claude-semaphore\$"
+nohup ~/.claude/semaphore-tray/claude-semaphore >/dev/null 2>&1 &
+```
+
 ## Development
 
 ```bash
@@ -176,6 +185,7 @@ Tests:
 ```bash
 (cd tray && go test ./...)   # session merging, priority, click targets
 tests/state_test.sh          # hook script scenarios
+tests/bootstrap_test.sh      # installing, updating and restarting the tray (needs cc)
 ```
 
 Test the plugin without installing:
