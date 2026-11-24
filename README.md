@@ -66,7 +66,12 @@ claude plugin marketplace update claude-semaphore
 claude plugin update semaphore@claude-semaphore
 ```
 
-The tray app updates itself to match at the next session start.
+The tray app updates itself to match at the next session start. If a newer
+version has been out for a day and you are still on an older one, the tray's
+menu shows **Update available**, which opens these instructions. To know,
+the plugin asks GitHub for the latest release's version number at most once a
+day: one request to github.com that sends nothing about you. Set
+`SEMAPHORE_NO_UPDATE_CHECK=1` in your environment to turn it off.
 
 **Requirements:** `curl` (preinstalled on macOS/Linux; ships with Git Bash on
 Windows, which Claude Code already requires there).
@@ -168,6 +173,7 @@ Code in a terminal. In the VS Code extension the registry covers them.
 
 ```bash
 ~/.claude/semaphore-tray/claude-semaphore --status   # what the tray sees, per session
+~/.claude/semaphore-tray/claude-semaphore --version  # which tray version is installed
 ```
 
 To trace every hook event, start Claude Code with `SEMAPHORE_LOG` set:

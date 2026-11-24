@@ -66,6 +66,12 @@ func jump(t target) error {
 	return err
 }
 
+// openURL opens a web page in the default browser.
+func openURL(u string) error {
+	_, err := run(10*time.Second, "/usr/bin/open", u)
+	return err
+}
+
 // tabScript returns the AppleScript that selects the tab whose tty is its
 // argument in the terminal app, or "" for apps it cannot script.
 func tabScript(app string) string {

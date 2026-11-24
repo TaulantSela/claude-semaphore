@@ -58,3 +58,8 @@ func jump(t target) error {
 	_, err := run(10*time.Second, "xdg-open", t.url)
 	return err
 }
+
+func openURL(u string) error {
+	_, err := run(10*time.Second, "xdg-open", u)
+	return err
+}

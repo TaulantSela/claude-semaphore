@@ -217,4 +217,24 @@ case "$OS" in
     nohup "$BIN" >/dev/null 2>&1 &
     ;;
 esac
+
+# 4. For the tray's "Update available" row: at most once a day, note the
+#    latest release's version in .latest. GitHub answers /releases/latest
+#    with a redirect to the release's tag, so this is one request that sends
+#    nothing but the repo's URL. The file is rewritten only when the version
+#    changes, so its age tells the tray how long the version has been out.
+#    SEMAPHORE_NO_UPDATE_CHECK=1 turns it off.
+LATEST="$BIN_DIR/.latest"
+STAMP="$BIN_DIR/.update-check"
+if [ -z "${SEMAPHORE_NO_UPDATE_CHECK:-}" ] &&
+   [ -z "$(find "$STAMP" -mmin -1440 2>/dev/null)" ]; then
+  touch "$STAMP" 2>/dev/null
+  URL=$(curl -fsS --max-time 10 -o /dev/null -w '%{redirect_url}' \
+    "https://github.com/$REPO/releases/latest" 2>/dev/null)
+  V=${URL##*/releases/tag/v}
+  if [ "$V" != "$URL" ] && printf '%s' "$V" | grep -Eq '^[0-9]+(\.[0-9]+)*$' &&
+     [ "$V" != "$(cat "$LATEST" 2>/dev/null)" ]; then
+    printf '%s' "$V" > "$LATEST.$$" 2>/dev/null && mv -f "$LATEST.$$" "$LATEST"
+  fi
+fi
 exit 0

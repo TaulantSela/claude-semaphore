@@ -21,8 +21,12 @@ session, and clicking one brings its tab forward.
   source in the repository's `tray/` folder.
 - **The tray app** reads those state files and Claude Code's session
   registry (`~/.claude/sessions/`). It makes no network requests and sends
-  nothing anywhere. The only network access is the bootstrap's download from
-  GitHub.
+  nothing anywhere. When a newer version has been out for a day, its menu
+  shows **Update available**.
+- **Network access** is the bootstrap's alone: the download above, and at
+  most once a day a request for the latest release's version number, which
+  sends nothing about you. Set `SEMAPHORE_NO_UPDATE_CHECK=1` to turn the
+  check off.
 
 ## More
 

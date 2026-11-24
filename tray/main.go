@@ -19,7 +19,7 @@
 // `claude-semaphore --status` prints the sessions, the aggregate and where a
 // click on each session goes, instead of starting the tray, which helps when
 // the light looks wrong. `claude-semaphore --open <session id>` does what a
-// click does.
+// click does, and `claude-semaphore --version` prints the tray's version.
 package main
 
 import (
@@ -61,6 +61,10 @@ var stateDir, registryDir = func() (string, string) {
 }()
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--status" {
 		printStatus()
 		return
@@ -85,7 +89,10 @@ type tracker struct {
 	state    string
 	count    int
 	breathe  bool
+	update   string // newer release to point at, or ""
 }
+
+var updateFile = latestFile()
 
 func (t *tracker) refresh(now time.Time) {
 	hooks := readHooks(stateDir)
@@ -100,6 +107,7 @@ func (t *tracker) refresh(now time.Time) {
 	t.sessions = ss
 	t.state, t.count = aggregate(ss)
 	t.breathe = anyBreathing(ss)
+	t.update = availableUpdate(updateFile, version, now)
 }
 
 func (t *tracker) markSeen(now time.Time, only string) {
@@ -124,7 +132,10 @@ func printStatus() {
 	now := time.Now()
 	t.refresh(now)
 	cfg, _ := os.UserConfigDir()
-	fmt.Printf("%s — %s\n", t.state, headline(t.state, t.count, len(t.sessions)))
+	fmt.Printf("%s — %s  (tray %s)\n", t.state, headline(t.state, t.count, len(t.sessions)), version)
+	if t.update != "" {
+		fmt.Printf("  update available: %s — %s\n", t.update, updateDocs)
+	}
 	for _, s := range t.sessions {
 		fmt.Printf("  %s   [%s]\n      click → %s\n", sessionLine(s, now), s.id, resolve(s, system, cfg))
 	}
@@ -176,6 +187,8 @@ func onReady() {
 		slots[i].Hide()
 	}
 	systray.AddSeparator()
+	updateItem := systray.AddMenuItem("", "Open the update instructions")
+	updateItem.Hide()
 	seenItem := systray.AddMenuItem("Mark finished as seen", "Stop showing green for tasks you have already looked at")
 	resetItem := systray.AddMenuItem("Reset to idle", "Clear the plugin's state files")
 	quitItem := systray.AddMenuItem("Quit", "")
@@ -268,6 +281,10 @@ func onReady() {
 				setVisible(it, false)
 			}
 		}
+		if t.update != "" {
+			setText(updateItem, "Update available: v"+t.update)
+		}
+		setVisible(updateItem, t.update != "")
 		anyFinished := false
 		for _, s := range t.sessions {
 			anyFinished = anyFinished || s.state == stGreen
@@ -371,6 +388,8 @@ func onReady() {
 					t.markSeen(time.Now(), id) // you are going to look at it
 					update()
 				}
+			case <-updateItem.ClickedCh:
+				go openURL(updateDocs) // shells out; keep the loop free
 			case <-seenItem.ClickedCh:
 				t.markSeen(time.Now(), "")
 				update()

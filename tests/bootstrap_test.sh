@@ -24,6 +24,7 @@ export FAKE_LOG="$W/tray.log"
 export FAKE_RELEASES="$W/releases"
 export FAKE_CURL_LOG="$W/curl.log"
 export FAKE_CURL_DELAY=0
+export FAKE_LATEST= # version GitHub's /releases/latest redirects to; empty = fails
 mkdir -p "$HOME/Library/LaunchAgents" "$FAKE_RELEASES" "$W/stubs" "$W/plugin/scripts" "$W/plugin/.claude-plugin"
 : > "$FAKE_LOG"
 
@@ -65,12 +66,18 @@ out= url=
 while [ $# -gt 0 ]; do
   case $1 in
     -o) out=$2; shift 2 ;;
-    --retry) shift 2 ;;
+    -w|--retry|--max-time) shift 2 ;;
     -*) shift ;;
     *) url=$1; shift ;;
   esac
 done
 echo "$url" >> "$FAKE_CURL_LOG"
+case $url in
+  */releases/latest)
+    [ -n "$FAKE_LATEST" ] || exit 22
+    printf 'https://github.com/o/r/releases/tag/v%s' "$FAKE_LATEST"
+    exit 0 ;;
+esac
 sleep "$FAKE_CURL_DELAY"
 case $url in
   */download/v*) v=${url#*/download/v}; v=${v%%/*} ;;
@@ -132,8 +139,9 @@ check() {
 }
 
 installed() { cat "$HOME/.claude/semaphore-tray/.version" 2>/dev/null || echo "<none>"; }
-downloads() { wc -l < "$FAKE_CURL_LOG" 2>/dev/null | tr -d ' ' || echo 0; }
-leftovers() { ls -A "$HOME/.claude/semaphore-tray" | grep -v -x -e claude-semaphore -e .version -e .autostart-installed | tr '\n' ' '; }
+downloads() { grep -c /releases/download/ "$FAKE_CURL_LOG" 2>/dev/null || true; }
+checks() { grep -c /releases/latest "$FAKE_CURL_LOG" 2>/dev/null || true; }
+leftovers() { ls -A "$HOME/.claude/semaphore-tray" | grep -v -x -e claude-semaphore -e .version -e .autostart-installed -e .latest -e .update-check | tr '\n' ' '; }
 
 echo "install"
 plugin_version 0.3.0
@@ -197,6 +205,25 @@ mkdir -p "$HOME/.claude/semaphore-tray/.bootstrap.lock"
 printf '%s' "$dead" > "$HOME/.claude/semaphore-tray/.bootstrap.lock/pid"
 bootstrap; settle
 check "a lock left by a dead run is taken over" "$(running_version)" 0.3.2
+
+echo "update check"
+TRAYDIR="$HOME/.claude/semaphore-tray"
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1"; }
+rm -f "$TRAYDIR/.update-check" "$TRAYDIR/.latest"; : > "$FAKE_CURL_LOG"
+FAKE_LATEST=0.3.9 bootstrap
+check "records the latest release's version" "$(cat "$TRAYDIR/.latest" 2>/dev/null)" 0.3.9
+touch -t 202601010000 "$TRAYDIR/.latest"; first=$(mtime "$TRAYDIR/.latest")
+FAKE_LATEST=0.4.0 bootstrap
+check "asks at most once a day" "$(checks)" 1
+rm -f "$TRAYDIR/.update-check"
+FAKE_LATEST=0.3.9 bootstrap
+check "an unchanged version leaves the file's age alone" "$(mtime "$TRAYDIR/.latest")" "$first"
+rm -f "$TRAYDIR/.update-check"
+FAKE_LATEST= bootstrap
+check "a failed check keeps what it knew" "$(cat "$TRAYDIR/.latest")" 0.3.9
+rm -f "$TRAYDIR/.update-check"; : > "$FAKE_CURL_LOG"
+SEMAPHORE_NO_UPDATE_CHECK=1 FAKE_LATEST=0.4.0 bootstrap
+check "SEMAPHORE_NO_UPDATE_CHECK=1 turns it off" "$(checks)" 0
 
 echo
 [ "$FAILS" = 0 ] && echo "all passed" || { echo "$FAILS failed"; exit 1; }
