@@ -63,8 +63,11 @@ jobs:
       - name: hooks.json is valid JSON
         run: python3 -m json.tool plugin/hooks/hooks.json > /dev/null
 
-      - name: state.sh parses
-        run: bash -n plugin/scripts/state.sh
+      - name: Scripts parse
+        run: bash -n plugin/scripts/state.sh && bash -n plugin/scripts/bootstrap.sh
 
       - name: Hook scenarios
         run: tests/state_test.sh
+
+      - name: Bootstrap scenarios
+        run: tests/bootstrap_test.sh

@@ -34,59 +34,115 @@ WANT_VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
   "$(dirname "$0")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)
 HAVE_VER=$(cat "$VERFILE" 2>/dev/null)
 
-# 1. Download the tray binary on first run, or refresh it when the plugin
-#    version changed — so updating the plugin also updates the binary, instead
-#    of leaving an old tray in place forever (it was only ever fetched once).
-if [ ! -x "$BIN" ] || { [ -n "$WANT_VER" ] && [ "$WANT_VER" != "$HAVE_VER" ]; }; then
+# Several sessions start at once when an editor restores its tabs, and each
+# runs this script. Let one do the work: the others exit and leave starting
+# the tray to it. A holder that died (hook timeout, crash) leaves the lock
+# behind, so a lock whose pid is gone, or that is older than 3 minutes (the
+# hook times out after 120 s), is taken over.
+LOCK="$BIN_DIR/.bootstrap.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  HOLDER=$(cat "$LOCK/pid" 2>/dev/null)
+  if [ -z "$(find "$LOCK" -maxdepth 0 -mmin +3 2>/dev/null)" ] &&
+     { [ -z "$HOLDER" ] || kill -0 "$HOLDER" 2>/dev/null; }; then
+    exit 0 # held (no pid yet means its holder only just created it)
+  fi
+  rm -rf "$LOCK"
+  mkdir "$LOCK" 2>/dev/null || exit 0
+fi
+printf '%s' "$$" > "$LOCK/pid" 2>/dev/null
+TMP="$BIN.$$.tmp"
+trap 'rm -rf "$LOCK" "$TMP"' EXIT
+
+# The running tray, matched by its exact path: argv[0] is "$BIN", followed by
+# nothing or its flags. A looser match (pkill -f "$BIN") also hits anything
+# that merely mentions the path, such as another run's curl writing to
+# "$BIN.tmp".
+BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+TRAY_RE="^$BIN_RE( |\$)"
+
+# stop_tray ends the running tray and waits until it is gone, so the next one
+# can take the single-instance port.
+stop_tray() {
+  if [ "$OS" = windows ]; then
+    taskkill //F //IM "$(basename "$BIN")" >/dev/null 2>&1
+    sleep 1
+    return 0
+  fi
+  pkill -f "$TRAY_RE" 2>/dev/null || return 0
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "$TRAY_RE" >/dev/null 2>&1 || return 0
+    sleep 0.3
+  done
+  pkill -9 -f "$TRAY_RE" 2>/dev/null
+  sleep 0.3
+}
+
+# newer A B: version A is newer than version B (dotted numbers).
+newer() {
+  [ "$1" != "$2" ] &&
+    [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]
+}
+
+# 1. Download the tray binary on first run, or when the plugin is newer than
+#    the binary, so updating the plugin also updates the tray. Never go back:
+#    a session still running an older plugin (its SessionStart fires again on
+#    resume, /clear and compaction) must not swap an older tray in.
+UPDATE=0
+if [ ! -x "$BIN" ]; then
+  UPDATE=1
+elif [ -n "$WANT_VER" ] && [ "$WANT_VER" != "$HAVE_VER" ] &&
+     { [ -z "$HAVE_VER" ] || newer "$WANT_VER" "$HAVE_VER"; }; then
+  UPDATE=1
+fi
+
+if [ "$UPDATE" = 1 ]; then
   UPDATING=0
   [ -x "$BIN" ] && UPDATING=1
-
-  # Stop the running tray so its file can be replaced (mandatory on Windows,
-  # where a running .exe is locked) and the new binary can take over.
-  if [ "$UPDATING" = 1 ]; then
-    case "$OS" in
-      windows) taskkill //F //IM "$(basename "$BIN")" >/dev/null 2>&1 ;;
-      *)       pkill -f "$BIN" 2>/dev/null ;;
-    esac
-    sleep 1
-  fi
 
   ASSET="claude-semaphore-$OS-$ARCH"
   [ "$OS" = windows ] && ASSET="$ASSET.exe"
 
   # Prefer the asset tagged with the plugin version so binary and hooks match;
-  # fall back to the latest release if that tag has no asset yet.
+  # fall back to the latest release if that tag has no asset yet. The old
+  # tray keeps running meanwhile, so a failed download leaves it be.
   GOT=""
   if [ -n "$WANT_VER" ] &&
-     curl -fsSL --retry 2 -o "$BIN.tmp" \
+     curl -fsSL --retry 2 -o "$TMP" \
        "https://github.com/$REPO/releases/download/v$WANT_VER/$ASSET" 2>/dev/null &&
-     [ -s "$BIN.tmp" ]; then
+     [ -s "$TMP" ]; then
     GOT="$WANT_VER"
-  elif curl -fsSL --retry 2 -o "$BIN.tmp" \
+  elif curl -fsSL --retry 2 -o "$TMP" \
        "https://github.com/$REPO/releases/latest/download/$ASSET" 2>/dev/null &&
-     [ -s "$BIN.tmp" ]; then
+     [ -s "$TMP" ]; then
     GOT="latest"
   fi
 
   if [ -n "$GOT" ]; then
-    chmod +x "$BIN.tmp" 2>/dev/null
-    if mv "$BIN.tmp" "$BIN" 2>/dev/null; then
+    chmod +x "$TMP" 2>/dev/null
+    # Windows locks a running .exe, so there the tray stops before the swap.
+    # Elsewhere it stops after: whatever starts a tray from then on (launchd,
+    # or the bootstrap of an older plugin version, which takes no lock)
+    # starts the new binary.
+    [ "$OS" = windows ] && [ "$UPDATING" = 1 ] && stop_tray
+    if mv -f "$TMP" "$BIN" 2>/dev/null; then
       # Record the version only when we got the exact one asked for, so a
       # latest-fallback keeps trying for the pinned build next session.
       [ "$GOT" = "$WANT_VER" ] && printf '%s' "$WANT_VER" > "$VERFILE" 2>/dev/null
-      # macOS: a launchd job pins a code requirement to the binary it was first
-      # bootstrapped with and kills a replaced binary with OS_REASON_CODESIGNING.
-      # Re-bootstrap so the requirement re-derives from the new binary.
-      if [ "$UPDATING" = 1 ] && [ "$OS" = darwin ] && [ -f "$PLIST" ]; then
-        launchctl bootout "gui/$(id -u)/com.claude-semaphore" 2>/dev/null
-        launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null
+      if [ "$UPDATING" = 1 ] && [ "$OS" != windows ]; then
+        # macOS: a launchd job pins a code requirement to the binary it was
+        # first bootstrapped with and kills a replaced binary with
+        # OS_REASON_CODESIGNING. Unload it, stop a tray started any other
+        # way, then load it again so the requirement re-derives from the new
+        # binary and RunAtLoad starts it.
+        RELOAD=0
+        [ "$OS" = darwin ] && [ -f "$PLIST" ] && RELOAD=1
+        [ "$RELOAD" = 1 ] && launchctl bootout "gui/$(id -u)/com.claude-semaphore" 2>/dev/null
+        stop_tray
+        [ "$RELOAD" = 1 ] && launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null
       fi
-    else
-      rm -f "$BIN.tmp"
     fi
-  else
-    rm -f "$BIN.tmp"
-    [ "$UPDATING" = 0 ] && exit 0 # first-run download failed: nothing to launch
+  elif [ "$UPDATING" = 0 ]; then
+    exit 0 # first-run download failed: nothing to launch
   fi
 fi
 
