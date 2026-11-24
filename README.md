@@ -51,7 +51,10 @@ Inside Claude Code:
 Start a new Claude Code session and the traffic light appears in your tray
 within a few seconds. On first run the plugin downloads the tray app for your
 platform (~5 MB) from this repo's GitHub Releases and registers it to start
-at login.
+at login. It runs only a build whose SHA-256 matches the one pinned in the
+plugin's [`SHA256SUMS`](plugin/SHA256SUMS); anything else is deleted unrun.
+The builds come from this repo's source, compiled by
+[GitHub Actions](.github/workflows/release.yml).
 
 **Updates:** Claude Code does not update plugins from third-party
 marketplaces unless you ask it to. To get new versions automatically, run
@@ -210,15 +213,24 @@ claude --plugin-dir ./plugin
 version knows: a build that meets an unknown event (for example
 `PostToolBatch` on 2.1.97) silently skips **all** of the plugin's hooks.
 
-To release, bump `version` in `plugin/.claude-plugin/plugin.json` (the only
-place it is set; users receive nothing until it changes), merge, then push a
-tag for it. GitHub Actions builds the tray for darwin/linux/windows ×
-amd64/arm64, and `bootstrap.sh` downloads the build tagged with the plugin's
-version:
+To release, build first, then point the plugin at the build:
 
-```bash
-git tag -s v0.3.1 -m v0.3.1 && git push origin v0.3.1
-```
+1. Merge the changes and push a tag on `main`. GitHub Actions builds the tray
+   for darwin/linux/windows × amd64/arm64 and publishes a release with the
+   binaries and their `SHA256SUMS`:
+
+   ```bash
+   git tag -s v0.3.2 -m v0.3.2 && git push origin v0.3.2
+   ```
+
+2. In one commit, bump `version` in `plugin/.claude-plugin/plugin.json` (the
+   only place it is set) to the tag's version and replace
+   `plugin/SHA256SUMS` with the release's. Users receive nothing until the
+   version changes, so they never see a version whose binaries are missing:
+
+   ```bash
+   gh release download v0.3.2 -p SHA256SUMS -O plugin/SHA256SUMS --clobber
+   ```
 
 ## License
 
