@@ -30,8 +30,9 @@ PLIST="$HOME/Library/LaunchAgents/com.claude-semaphore.plist"
 
 # The plugin version, read from the manifest beside this script. The binary is
 # tagged with it so a plugin update also pulls a matching tray binary.
+PLUGIN_DIR="$(dirname "$0")/.."
 WANT_VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-  "$(dirname "$0")/../.claude-plugin/plugin.json" 2>/dev/null | head -1)
+  "$PLUGIN_DIR/.claude-plugin/plugin.json" 2>/dev/null | head -1)
 HAVE_VER=$(cat "$VERFILE" 2>/dev/null)
 
 # Several sessions start at once when an editor restores its tabs, and each
@@ -83,6 +84,16 @@ newer() {
     [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]
 }
 
+# sha256 FILE prints the file's SHA-256 in lowercase hex (macOS ships shasum,
+# Linux and Git Bash sha256sum), or nothing when neither tool exists.
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1"
+  fi 2>/dev/null | awk '{ print tolower($1) }'
+}
+
 # 1. Download the tray binary on first run, or when the plugin is newer than
 #    the binary, so updating the plugin also updates the tray. Never go back:
 #    a session still running an older plugin (its SessionStart fires again on
@@ -102,22 +113,21 @@ if [ "$UPDATE" = 1 ]; then
   ASSET="claude-semaphore-$OS-$ARCH"
   [ "$OS" = windows ] && ASSET="$ASSET.exe"
 
-  # Prefer the asset tagged with the plugin version so binary and hooks match;
-  # fall back to the latest release if that tag has no asset yet. The old
-  # tray keeps running meanwhile, so a failed download leaves it be.
-  GOT=""
-  if [ -n "$WANT_VER" ] &&
+  # The plugin pins the SHA-256 of every build it may run (SHA256SUMS beside
+  # hooks/), so a release asset that was replaced or damaged never runs.
+  # Without a pinned checksum for this platform nothing is downloaded. The
+  # old tray keeps running meanwhile, so a failed download leaves it be.
+  EXPECT=$(awk -v f="$ASSET" '$2 == f || $2 == "*" f { print tolower($1); exit }' \
+    "$PLUGIN_DIR/SHA256SUMS" 2>/dev/null)
+  GOT=0
+  if [ -n "$WANT_VER" ] && [ -n "$EXPECT" ] &&
      curl -fsSL --retry 2 -o "$TMP" \
        "https://github.com/$REPO/releases/download/v$WANT_VER/$ASSET" 2>/dev/null &&
-     [ -s "$TMP" ]; then
-    GOT="$WANT_VER"
-  elif curl -fsSL --retry 2 -o "$TMP" \
-       "https://github.com/$REPO/releases/latest/download/$ASSET" 2>/dev/null &&
-     [ -s "$TMP" ]; then
-    GOT="latest"
+     [ "$(sha256 "$TMP")" = "$EXPECT" ]; then
+    GOT=1
   fi
 
-  if [ -n "$GOT" ]; then
+  if [ "$GOT" = 1 ]; then
     chmod +x "$TMP" 2>/dev/null
     # Windows locks a running .exe, so there the tray stops before the swap.
     # Elsewhere it stops after: whatever starts a tray from then on (launchd,
@@ -125,9 +135,7 @@ if [ "$UPDATE" = 1 ]; then
     # starts the new binary.
     [ "$OS" = windows ] && [ "$UPDATING" = 1 ] && stop_tray
     if mv -f "$TMP" "$BIN" 2>/dev/null; then
-      # Record the version only when we got the exact one asked for, so a
-      # latest-fallback keeps trying for the pinned build next session.
-      [ "$GOT" = "$WANT_VER" ] && printf '%s' "$WANT_VER" > "$VERFILE" 2>/dev/null
+      printf '%s' "$WANT_VER" > "$VERFILE" 2>/dev/null
       if [ "$UPDATING" = 1 ] && [ "$OS" != windows ]; then
         # macOS: a launchd job pins a code requirement to the binary it was
         # first bootstrapped with and kills a replaced binary with

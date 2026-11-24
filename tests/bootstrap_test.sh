@@ -6,7 +6,9 @@
 # port as its single-instance lock and runs as argv[0] = its path. It logs
 # "<version> <pid>" when it takes the port. curl is a stub that serves those
 # builds as release assets, slowly enough for runs to overlap; launchctl is a
-# no-op. HOME points at a scratch folder, so nothing touches the real tray.
+# no-op. Each plugin version pins its build's SHA-256 in SHA256SUMS, as the
+# real plugin does. HOME points at a scratch folder, so nothing touches the
+# real tray.
 #
 # Usage: tests/bootstrap_test.sh [path/to/bootstrap.sh]
 
@@ -22,7 +24,6 @@ export FAKE_LOG="$W/tray.log"
 export FAKE_RELEASES="$W/releases"
 export FAKE_CURL_LOG="$W/curl.log"
 export FAKE_CURL_DELAY=0
-export FAKE_LATEST=none
 mkdir -p "$HOME/Library/LaunchAgents" "$FAKE_RELEASES" "$W/stubs" "$W/plugin/scripts" "$W/plugin/.claude-plugin"
 : > "$FAKE_LOG"
 
@@ -53,7 +54,8 @@ int main(void) {
   for (;;) pause();
 }
 EOF
-for v in 0.3.0 0.3.1; do
+# 0.3.2 stands in for a release asset that is not the build the plugin pinned.
+for v in 0.3.0 0.3.1 0.3.2; do
   cc -DVERSION="\"$v\"" -o "$FAKE_RELEASES/$v" "$W/tray.c" || { echo "cc failed"; exit 1; }
 done
 
@@ -71,7 +73,6 @@ done
 echo "$url" >> "$FAKE_CURL_LOG"
 sleep "$FAKE_CURL_DELAY"
 case $url in
-  */latest/download/*) v=$FAKE_LATEST ;;
   */download/v*) v=${url#*/download/v}; v=${v%%/*} ;;
 esac
 [ -f "$FAKE_RELEASES/$v" ] || exit 22
@@ -82,8 +83,23 @@ chmod +x "$W/stubs/curl" "$W/stubs/launchctl"
 export PATH="$W/stubs:$PATH"
 cp "$SCRIPT" "$W/plugin/scripts/bootstrap.sh"
 
+case "$(uname -s)" in Darwin) OS=darwin ;; *) OS=linux ;; esac
+case "$(uname -m)" in arm64|aarch64) ARCH=arm64 ;; *) ARCH=amd64 ;; esac
+ASSET="claude-semaphore-$OS-$ARCH"
+sha() { { command -v sha256sum >/dev/null && sha256sum "$1" || shasum -a 256 "$1"; } | awk '{ print $1 }'; }
+
+# plugin_version VERSION [PIN]: the plugin at VERSION, pinning the checksum of
+# release build PIN (default VERSION; "none" ships no SHA256SUMS; a version
+# without a build pins a checksum nothing has).
 plugin_version() {
+  local pin=${2:-$1} sums="$W/plugin/SHA256SUMS"
   printf '{\n  "name": "semaphore",\n  "version": "%s"\n}\n' "$1" > "$W/plugin/.claude-plugin/plugin.json"
+  rm -f "$sums"
+  if [ -f "$FAKE_RELEASES/$pin" ]; then
+    printf '%s  %s\n' "$(sha "$FAKE_RELEASES/$pin")" "$ASSET" > "$sums"
+  elif [ "$pin" != none ]; then
+    printf '%064d  %s\n' 0 "$ASSET" > "$sums"
+  fi
 }
 bootstrap() { bash "$W/plugin/scripts/bootstrap.sh"; }
 
@@ -154,19 +170,33 @@ check "without downloading anything" "$(downloads)" 0
 
 echo "failed download"
 before=$(running)
-plugin_version 0.3.2 # no such release, and no latest either
+plugin_version 0.3.3 # no such release
 bootstrap; settle
 check "the old tray keeps running" "$(running)" "$before"
 check "the recorded version stays" "$(installed)" 0.3.1
 
+echo "checksums"
+plugin_version 0.3.2 0.3.1 # the 0.3.2 asset is not the build the plugin pinned
+bootstrap; settle
+check "a build that does not match the pinned checksum is refused" "$(running)" "$before"
+check "the recorded version stays" "$(installed)" 0.3.1
+check "and the refused download is deleted" "$(leftovers)" ""
+: > "$FAKE_CURL_LOG"
+plugin_version 0.3.2 none
+bootstrap; settle
+check "without a pinned checksum nothing is downloaded" "$(downloads)" 0
+check "the old tray keeps running" "$(running)" "$before"
+plugin_version 0.3.2
+bootstrap; settle
+check "the pinned build installs" "$(running_version)" 0.3.2
+
 echo "stale lock"
 pkill -f "$TRAY_RE"; sleep 0.3
-plugin_version 0.3.1
 sleep 0 & dead=$!; wait $dead
 mkdir -p "$HOME/.claude/semaphore-tray/.bootstrap.lock"
 printf '%s' "$dead" > "$HOME/.claude/semaphore-tray/.bootstrap.lock/pid"
 bootstrap; settle
-check "a lock left by a dead run is taken over" "$(running_version)" 0.3.1
+check "a lock left by a dead run is taken over" "$(running_version)" 0.3.2
 
 echo
 [ "$FAILS" = 0 ] && echo "all passed" || { echo "$FAILS failed"; exit 1; }
