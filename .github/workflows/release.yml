@@ -55,7 +55,7 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
           EXT=""
-          LDFLAGS="-s -w"
+          LDFLAGS="-s -w -X main.version=${GITHUB_REF_NAME#v}"
           if [ "$GOOS" = "windows" ]; then
             EXT=".exe"
             LDFLAGS="$LDFLAGS -H=windowsgui"

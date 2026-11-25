@@ -52,3 +52,8 @@ func jump(t target) error {
 	_, err := run(10*time.Second, "rundll32", "url.dll,FileProtocolHandler", t.url)
 	return err
 }
+
+func openURL(u string) error {
+	_, err := run(10*time.Second, "rundll32", "url.dll,FileProtocolHandler", u)
+	return err
+}
